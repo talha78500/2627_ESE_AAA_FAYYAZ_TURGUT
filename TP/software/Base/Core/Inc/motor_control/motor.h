@@ -10,4 +10,12 @@
 
 
 
+#define PWM_PERIOD     4250   // ARR + 1
+#define PWM_DUTY_TEST  2550   // 60 % de PWM_PERIOD
+
+
+void motor_init(void);
+
+
+
 #endif /* INC_MOTOR_CONTROL_MOTOR_H_ */

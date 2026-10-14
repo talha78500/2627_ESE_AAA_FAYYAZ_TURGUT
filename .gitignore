@@ -1,0 +1,4 @@
+.history/
+*.lck
+Debug/
+Release/

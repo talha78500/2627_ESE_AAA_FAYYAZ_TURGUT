@@ -32,7 +32,8 @@ Core/Src/app.o: ../Core/Src/app.c ../Core/Inc/app.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h \
  ../Core/Inc/usart.h ../Core/Inc/main.h \
- ../Core/Inc/user_interface/shell.h ../Core/Inc/main.h
+ ../Core/Inc/user_interface/shell.h ../Core/Inc/main.h \
+ ../Core/Inc/user_interface/led.h ../Core/Inc/motor_control/motor.h
 ../Core/Inc/app.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h:
 ../Core/Inc/stm32g4xx_hal_conf.h:
@@ -70,3 +71,5 @@ Core/Src/app.o: ../Core/Src/app.c ../Core/Inc/app.h \
 ../Core/Inc/main.h:
 ../Core/Inc/user_interface/shell.h:
 ../Core/Inc/main.h:
+../Core/Inc/user_interface/led.h:
+../Core/Inc/motor_control/motor.h:
