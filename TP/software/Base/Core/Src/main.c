@@ -102,7 +102,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
 	init_device();
 
-	motor_init();
+
+
+
 
   /* USER CODE END 2 */
 
