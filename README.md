@@ -6,7 +6,7 @@ Commande d'une machine à courant continu (MCC) par un hacheur 4 transistors pil
 |---|---|
 | **Binôme** | Talha FAYYAZ — Iprahim TURGUT |
 | **Enseignant** | alexis.martin@ensea.fr |
-| **Avancement** | §1 → §6.3 terminés · §7 à faire |
+| **Avancement** | §1 → §7.1 terminés · §7.2 et §7.3 à faire |
 
 ---
 
@@ -18,6 +18,7 @@ Commande d'une machine à courant continu (MCC) par un hacheur 4 transistors pil
 5. [6.1 Génération de 4 PWM](#5-61-génération-de-4-pwm)
 6. [6.2 Commande de vitesse](#6-62-commande-de-vitesse)
 7. [6.3 Premiers tests moteur](#7-63-premiers-tests-moteur)
+8. [7.1 Commande de la vitesse avec rampe](#8-71-commande-de-la-vitesse-avec-rampe)
 
 ---
 
@@ -64,7 +65,10 @@ Terminal série via l'USB ST-Link (Tera Term, port COM de la Nucleo).
 | `help` | Liste des commandes |
 | `test a b c` | Affiche les arguments reçus |
 | `led on/off/toggle` | Pilote la LED utilisateur |
-| `SETCCR XXXX` | Fixe le rapport cyclique (voir §6.2) |
+| `SETCCR XXXX` | Fixe le rapport cyclique immédiatement (voir §6.2) |
+| `start` | Démarre les PWM à 50 % (voir §7.1) |
+| `stop` | Arrête les PWM (voir §7.1) |
+| `speed XXXX` | Atteint le CCR demandé avec une rampe (voir §7.1) |
 
 Pour ajouter une commande, on écrit une fonction `int f(h_shell_t*, int argc, char** argv)` puis on l'enregistre avec `shell_add(&hshell1, "nom", f, "description")`.
 
@@ -288,3 +292,101 @@ Un passage brutal du rapport cyclique (par exemple de 50 % à 70 %) applique d'u
 
 ### Solution
 Il faut une **montée progressive du rapport cyclique** jusqu'à la valeur demandée, avec un petit incrément du CCR à intervalle de temps régulier. Cette rampe est mise en place avec la commande `speed` au §7.1.
+
+---
+
+## 8. 7.1 Commande de la vitesse avec rampe
+
+### Objectif
+Ne plus appliquer la consigne d'un coup comme avec `SETCCR`, mais **limiter l'accélération** pour éviter l'appel de courant observé en 6.3.
+
+### Commandes ajoutées
+| Commande | Rôle |
+|---|---|
+| `start` | Fixe le CCR à 2125 (α = 50 %, vitesse nulle) puis démarre les 4 PWM (`HAL_TIM_PWM_Start` et `HAL_TIMEx_PWMN_Start`) |
+| `stop` | Arrête les 4 PWM (`HAL_TIM_PWM_Stop` et `HAL_TIMEx_PWMN_Stop`) et remet le CCR à 2125 |
+| `speed XXXX` | Définit une **cible** de CCR (0 à 4250). Le CCR rejoint cette cible progressivement. |
+
+**Sécurité :**
+- Les PWM ne démarrent plus automatiquement au reset : il faut taper `start`.
+- `speed` est refusé tant que le moteur n'a pas été démarré.
+- Une valeur hors de [0 ; 4250] est refusée, et rien n'est modifié.
+
+### Principe de la rampe
+Le programme conserve deux valeurs :
+- `ccr_current` : le CCR appliqué actuellement dans TIM1 ;
+- `ccr_target` : le CCR demandé par `speed`.
+
+La commande `speed` ne modifie que la **cible**. La fonction `motor_ramp_update()`, appelée en permanence dans `loop()`, rapproche le CCR actuel de la cible de **`RAMP_STEP` = 5 pas toutes les `RAMP_PERIOD_MS` = 10 ms** (temporisation non bloquante avec `HAL_GetTick()`).
+
+| Transition | Écart de CCR | Durée de la rampe |
+|---|---|---|
+| 50 % → 70 % (2125 → 2975) | 850 | 850 / 5 × 10 ms = **1,7 s** |
+| 50 % → 100 % (2125 → 4250) | 2125 | **4,25 s** |
+
+La pente se règle en modifiant uniquement `RAMP_STEP` et `RAMP_PERIOD_MS` dans `motor.h`.
+
+### Code
+**`motor.h`**
+```c
+#define RAMP_STEP           5                   // pas de CCR
+#define RAMP_PERIOD_MS      10                  // ms entre deux pas
+
+void motor_ramp_update(void);
+int sh_start(h_shell_t * h_shell, int argc, char ** argv);
+int sh_stop(h_shell_t * h_shell, int argc, char ** argv);
+int sh_speed(h_shell_t * h_shell, int argc, char ** argv);
+```
+
+**`motor.c`** : la rampe
+```c
+static uint32_t ccr_current = PWM_CCR_STOP;              // CCR appliqué actuellement
+static volatile uint32_t ccr_target = PWM_CCR_STOP;      // CCR visé (modifié par le shell)
+static volatile uint8_t motor_running = 0;               // 1 si les PWM sont actives
+
+void motor_ramp_update(void)
+{
+	static uint32_t last_tick = 0;
+	uint32_t target = ccr_target;
+
+	if (!motor_running || ccr_current == target)
+	{
+		return;
+	}
+	if (HAL_GetTick() - last_tick < RAMP_PERIOD_MS)
+	{
+		return;
+	}
+	last_tick = HAL_GetTick();
+
+	if (ccr_current < target)
+	{
+		motor_apply_ccr((target - ccr_current > RAMP_STEP) ? ccr_current + RAMP_STEP : target);
+	}
+	else
+	{
+		motor_apply_ccr((ccr_current - target > RAMP_STEP) ? ccr_current - RAMP_STEP : target);
+	}
+}
+```
+
+**`app.c`**
+```c
+void loop(){
+	motor_ramp_update();
+}
+```
+
+### Tests
+| Commande | Réponse du shell | Comportement observé |
+|---|---|---|
+| *(reset)* | — | aucune PWM |
+| `speed 3000` | `Erreur : moteur arrete, taper start` | rien ne change |
+| `start` | `PWM demarrees, CCR = 2125 (50 %)` | 4 PWM à 50 %, moteur à l'arrêt |
+| `speed 2975` | `Rampe vers CCR = 2975` | le moteur accélère **progressivement** jusqu'à α = 70 % |
+| `speed 2125` | `Rampe vers CCR = 2125` | décélération progressive jusqu'à l'arrêt |
+| `speed 1275` | `Rampe vers CCR = 1275` | accélération progressive **dans l'autre sens** (α = 30 %) |
+| `speed 5000` | `Erreur : speed <0..4250>, rien n'est modifie` | rien ne change |
+| `stop` | `PWM arretees` | PWM coupées |
+
+Le moteur démarre et change de sens **sans à-coup** : la rampe supprime le problème d'appel de courant observé en 6.3.
