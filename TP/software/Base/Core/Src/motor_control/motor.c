@@ -16,15 +16,17 @@
 #include <stdlib.h>
 
 /* Applique un CCR aux 4 transistors : U = ccr, V = PWM_PERIOD - ccr */
-void motor_set_ccr(uint32_t ccr)
+HAL_StatusTypeDef motor_set_ccr(uint32_t ccr)
 {
 	if (ccr > PWM_CCR_MAX)
 	{
-		ccr = PWM_CCR_MAX;                      // saturation
+		return HAL_ERROR;                       // hors plage : on ne touche à rien
 	}
 	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);
 	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, PWM_PERIOD - ccr);
+	return HAL_OK;
 }
+
 
 void motor_init(void)
 {
@@ -38,21 +40,29 @@ void motor_init(void)
 	if (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2) != HAL_OK) Error_Handler();
 }
 
-int sh_set_ccr(h_shell_t * h_shell, int argc, char ** argv)   // <-- même signature que la fonction de led.c
+int sh_set_ccr(h_shell_t * h_shell, int argc, char ** argv)
 {
+	int size;
+
 	if (argc != 2)
 	{
-		return -1;                              // usage : SET_CCR XXXX
+		size = snprintf(h_shell->print_buffer, SHELL_PRINT_BUFFER_SIZE, "Usage : SETCCR <%d..%d>\r\n", PWM_CCR_MIN, PWM_CCR_MAX);
+		h_shell->drv.transmit(h_shell->print_buffer, size);
+		return -1;
 	}
 
 	char * end;
 	long value = strtol(argv[1], &end, 10);     // conversion chaine -> entier
 
-	if (*end != '\0' || value < 0)
+	if (*end != '\0' || value < PWM_CCR_MIN || value > PWM_CCR_MAX)
 	{
-		return -1;                              // pas un nombre valide
+		size = snprintf(h_shell->print_buffer, SHELL_PRINT_BUFFER_SIZE, "Erreur : valeur hors plage <%d..%d>, rien n'est modifie\r\n", PWM_CCR_MIN, PWM_CCR_MAX);
+		h_shell->drv.transmit(h_shell->print_buffer, size);
+		return -1;
 	}
 
-	motor_set_ccr((uint32_t)value);             // saturation a PWM_CCR_MAX incluse
+	motor_set_ccr((uint32_t)value);
+	size = snprintf(h_shell->print_buffer, SHELL_PRINT_BUFFER_SIZE, "CCR = %ld\r\n", value);
+	h_shell->drv.transmit(h_shell->print_buffer, size);
 	return 0;
 }
