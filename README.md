@@ -6,7 +6,7 @@ Commande d'une machine à courant continu (MCC) par un hacheur 4 transistors pil
 |---|---|
 | **Binôme** | Talha FAYYAZ — Iprahim TURGUT |
 | **Enseignant** | alexis.martin@ensea.fr |
-| **Avancement** | §1 → §6.2 ✅ · §6.3 en cours · §7 à faire |
+| **Avancement** | §1 → §6.3 terminés · §7 à faire |
 
 ---
 
@@ -100,8 +100,8 @@ Pour ajouter une commande, on écrit une fonction `int f(h_shell_t*, int argc, c
 
   f_PWM = 170 MHz / (2 × ARR), soit ARR ≈ 4250 pour 20 kHz.
 
-- Valeur configurée : **ARR = 4250 − 1 = 4249**, ce qui donne f = 170 MHz / (2 × 4249) = 20,005 kHz. L'oscilloscope mesure **20,01 kHz** ✅.
-- Résolution : log₂(4249) ≈ **12 bits** ≥ 10 bits ✅.
+- Valeur configurée : **ARR = 4250 − 1 = 4249**, ce qui donne f = 170 MHz / (2 × 4249) = 20,005 kHz. L'oscilloscope mesure **20,01 kHz**.
+- Résolution : log₂(4249) ≈ **12 bits** ≥ 10 bits.
 
 ### Temps mort
 Transistors du hacheur : **IRF540N** (datasheet dans `PDFs/`).
@@ -168,11 +168,11 @@ void motor_init(void)
 
 | Mesure | Attendu | Mesuré |
 |---|---|---|
-| Fréquence | 20 kHz (20,005 kHz avec ARR = 4249) | **20,01 kHz** ✅ |
-| Complémentarité haut / bas | oui | oui ✅ |
-| Commande décalée (U et V centrés) | oui | oui ✅ |
-| Temps mort bras U (PA8 → PB13) | 118 ns | **124 ns** ✅ |
-| Temps mort bras V (PA9 → PB14) | 118 ns | **122 ns** ✅ |
+| Fréquence | 20 kHz (20,005 kHz avec ARR = 4249) | **20,01 kHz** |
+| Complémentarité haut / bas | oui | oui |
+| Commande décalée (U et V centrés) | oui | oui |
+| Temps mort bras U (PA8 → PB13) | 118 ns | **124 ns** |
+| Temps mort bras V (PA9 → PB14) | 118 ns | **122 ns** |
 
 L'écart de 4 à 6 ns sur le temps mort vient du temps de montée des sorties GPIO (configurées en vitesse *Low*) et de la résolution de la sonde numérique (2 ns).
 
@@ -257,9 +257,9 @@ Le rapport cyclique mesuré sur le bras U suit bien la commande :
 
 | Commande | α théorique (CCR / 4249) | α mesuré |
 |---|---|---|
-| `SETCCR 1000` | 23,5 % | **23,28 %** ✅ |
+| `SETCCR 1000` | 23,5 % | **23,28 %** |
 | `SETCCR 2000` | 47,1 % | voies complémentaires à 20,01 kHz (§6.1) |
-| `SETCCR 3000` | 70,6 % | **70,35 %** ✅ |
+| `SETCCR 3000` | 70,6 % | **70,35 %** |
 
 L'écart d'environ 0,2 % correspond au temps mort : 118 ns / 50 µs ≈ 0,24 %.
 
@@ -286,5 +286,5 @@ L'écart d'environ 0,2 % correspond au temps mort : 118 ns / 50 µs ≈ 0,24 %.
 ### Problème d'un changement brutal de rapport cyclique
 Un passage brutal du rapport cyclique (par exemple de 50 % à 70 %) applique d'un coup une forte tension moyenne au moteur, alors qu'il est encore à l'arrêt. Sa force contre-électromotrice est nulle, donc le courant n'est limité que par la résistance de l'induit : c'est un **fort appel de courant**, qui peut déclencher les protections du hacheur et provoquer un à-coup mécanique.
 
-### Solution (à faire)
-Mettre en place une **montée progressive du rapport cyclique** jusqu'à la valeur demandée par `SETCCR`, avec un petit incrément du CCR à intervalle de temps régulier.
+### Solution
+Il faut une **montée progressive du rapport cyclique** jusqu'à la valeur demandée, avec un petit incrément du CCR à intervalle de temps régulier. Cette rampe est mise en place avec la commande `speed` au §7.1.
