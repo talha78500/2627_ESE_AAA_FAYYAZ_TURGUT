@@ -11,6 +11,7 @@
 #include "user_interface/led.h"
 
 #include "motor_control/motor.h"
+#include "acquisition/input_analog.h"
 
 static char shell_uart2_received_char;
 
@@ -36,7 +37,7 @@ void init_device(void){
 //
 // Initialisation data acquistion
 	// ANALOG INPUT
-//	input_analog_init();
+	input_analog_init();
 	// ENCODER INPUT
 //	input_encoder_init();
 }
