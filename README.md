@@ -281,6 +281,16 @@ L'écart d'environ 0,2 % correspond au temps mort : 118 ns / 50 µs ≈ 0,24 %.
 
 ## 7. 6.3 Premiers tests moteur
 
+### Câblage du moteur
+
+![Schéma de câblage du moteur](Images/schema_cablage_moteur.png)
+
+- **Alimentation** : 50 V continu, avec une limitation de courant à 5 A pour protéger le montage pendant les essais.
+- **Hacheur** : seuls les bras **U** (Q1, Q2) et **V** (Q3, Q4) sont utilisés, ce qui forme un **pont en H**. Les transistors IRF540N sont commandés par TIM1 (PA8, PB13, PA9, PB14) à travers les drivers isolés HCPL-315J.
+- **MCC** (48 V / 12 A nominal) : branchée entre les points milieux **U** et **V**. Elle voit donc la tension (2α − 1)·V_bus.
+- **Capteurs de courant** LEM GO 10-SME/SP3 sur chaque sortie de bras : I_U → PA1 et I_V → PB1 (voir §7.2).
+- **Sur l'arbre** : le codeur incrémental (DE9 J1301 → PA6 / PA4, voir §7.3), la génératrice tachymétrique et la machine synchrone qui sert de charge.
+
 ### Protocole
 1. Moteur branché en respectant ses données constructeur, signaux vérifiés par l'enseignant.
 2. Démarrage à **α = 50 %** (`SETCCR 2125`) : tension moyenne nulle, le moteur reste à l'arrêt.
