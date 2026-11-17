@@ -55,6 +55,9 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(USR_LED_GPIO_Port, USR_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(ADC_SYNC_GPIO_Port, ADC_SYNC_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(NRST_SafetyUC_GPIO_Port, NRST_SafetyUC_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : USR_BTN_Pin */
@@ -69,6 +72,13 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(USR_LED_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : ADC_SYNC_Pin */
+  GPIO_InitStruct.Pin = ADC_SYNC_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(ADC_SYNC_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : NRST_SafetyUC_Pin */
   GPIO_InitStruct.Pin = NRST_SafetyUC_Pin;

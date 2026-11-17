@@ -12,6 +12,7 @@
 
 #include "motor_control/motor.h"
 #include "acquisition/input_analog.h"
+#include "acquisition/input_encoder.h"
 
 static char shell_uart2_received_char;
 
@@ -39,7 +40,7 @@ void init_device(void){
 	// ANALOG INPUT
 	input_analog_init();
 	// ENCODER INPUT
-//	input_encoder_init();
+	input_encoder_init();
 }
 
 uint8_t shell_uart2_transmit(const char *pData, uint16_t size)

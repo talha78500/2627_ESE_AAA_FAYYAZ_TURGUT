@@ -6,7 +6,7 @@ Commande d'une machine à courant continu (MCC) par un hacheur 4 transistors pil
 |---|---|
 | **Binôme** | Talha FAYYAZ — Iprahim TURGUT |
 | **Enseignant** | alexis.martin@ensea.fr |
-| **Avancement** | §1 → §7.1 terminés · §7.2 en cours (mesure en polling) · §7.3 à faire |
+| **Avancement** | §1 → §7.3 |
 
 ---
 
@@ -20,6 +20,7 @@ Commande d'une machine à courant continu (MCC) par un hacheur 4 transistors pil
 7. [6.3 Premiers tests moteur](#7-63-premiers-tests-moteur)
 8. [7.1 Commande de la vitesse avec rampe](#8-71-commande-de-la-vitesse-avec-rampe)
 9. [7.2 Mesure de courant](#9-72-mesure-de-courant)
+10. [7.3 Mesure de vitesse](#10-73-mesure-de-vitesse)
 
 ---
 
@@ -72,6 +73,8 @@ Terminal série via l'USB ST-Link (Tera Term, port COM de la Nucleo).
 | `speed XXXX` | Atteint le CCR demandé avec une rampe (voir §7.1) |
 | `current` | Affiche les courants des bras U et V (voir §7.2) |
 | `izero` | Enregistre le zéro des capteurs de courant (voir §7.2) |
+| `enc` | Affiche la valeur brute du compteur du codeur (voir §7.3) |
+| `rpm` | Affiche la vitesse du moteur en tr/min (voir §7.3) |
 
 Pour ajouter une commande, on écrit une fonction `int f(h_shell_t*, int argc, char** argv)` puis on l'enregistre avec `shell_add(&hshell1, "nom", f, "description")`.
 
@@ -471,12 +474,201 @@ Le code a donc été amélioré : **moyenne sur 64 mesures** et **un V₀ par ca
 - Grâce à la moyenne sur 64 mesures, la valeur de I_U est **parfaitement stable** d'une mesure à l'autre.
 - À vitesse nulle, le courant moyen doit être nul. Les valeurs affichées correspondent à l'**offset de chaque capteur** : environ 7 mV pour U et 14 mV pour V par rapport aux 1,65 V théoriques. Ces offsets sont supprimés en lançant `izero` moteur arrêté.
 
-| Test | Commande | I_U (mA) | I_V (mA) | Attendu |
-|---|---|---|---|---|
-| Vitesse nulle, après `izero` | `start`, `izero`, `current` | *à compléter* | *à compléter* | ≈ 0 |
-| À vide, sens 1 | `speed 2975` | *à compléter* | *à compléter* | faible courant, I_V ≈ −I_U |
-| À vide, sens 2 | `speed 1275` | *à compléter* | *à compléter* | signe inversé |
-| En charge | `speed 2975` + charge sur la machine synchrone | *à compléter* | *à compléter* | courant plus élevé |
+**Vitesse non nulle, en polling** (sans `izero`, donc avec V₀ = 1650 mV pour les deux capteurs) :
 
-### Prochaine étape
-Remplacer la mesure en polling par une chaîne d'acquisition **TIM1 → ADC → DMA**, synchronisée sur la PWM, et vérifier la synchronisation avec un GPIO qui bascule à chaque mesure.
+| α = 68 % (`speed 2900`) | α = 31 % (`speed 1300`) |
+|---|---|
+| ![Polling CCR 2900](Images/courant_polling_2900.png) | ![Polling CCR 1300](Images/courant_polling_1300.png) |
+
+| Commande | I_U | I_V | Constat |
+|---|---|---|---|
+| `speed 2900` | +1,5 à +2,3 A | −1,3 à −1,8 A | I_V de signe opposé à I_U |
+| `speed 1300` | −0,8 à −1,5 A | +1,5 à +2,1 A | les signes s'inversent avec le sens de rotation |
+
+- Le **sens du courant suit le sens de rotation** : la mesure est validée.
+- Deux défauts restent visibles : les offsets des capteurs (I_U + I_V ≠ 0, entre +180 et +560 mA) et une dispersion d'environ ±0,4 A d'une mesure à l'autre. Ces mesures, non synchronisées avec la PWM, tombent à des instants quelconques de l'ondulation de courant. C'est ce que corrige la chaîne d'acquisition suivante.
+
+### Chaîne d'acquisition TIM1 → ADC → DMA
+
+```
+TIM1 (PWM 20 kHz) ──TRGO──► ADC1 : PA1 (I_U) puis PB1 (I_V) ──► DMA (circulaire) ──► tableau en mémoire
+                                                                  └──► interruption : impulsion sur PC7 + moyenne
+```
+
+- **TIM1**, qui génère les PWM, déclenche l'ADC **une fois par période** de PWM (événement Update, Repetition Counter = 1), toujours au même instant : au sommet ou au creux du compteur, loin des commutations. Les mesures sont donc **synchrones avec la PWM**.
+- L'ADC convertit 2 voies à la suite (scan) et le **DMA** les recopie en mémoire **sans intervention du CPU**.
+- À la fin de chaque séquence, l'interruption `HAL_ADC_ConvCpltCallback` génère une **impulsion sur PC7** (`ADC_SYNC`, broche libre sur la carte du hacheur) et calcule une moyenne sur 64 périodes (3,2 ms).
+
+**Configuration CubeMX**
+
+| Périphérique | Paramètre | Valeur |
+|---|---|---|
+| TIM1 | Repetition Counter | 1 |
+| TIM1 | Trigger Event Selection (TRGO) | Update Event |
+| ADC1 | Number Of Conversion | 2 (Rank 1 = IN2/PA1, Rank 2 = IN12/PB1, 47,5 cycles) |
+| ADC1 | External Trigger Conversion Source | Timer 1 Trigger Out event (front montant) |
+| ADC1 | DMA Continuous Requests | Enabled |
+| DMA | ADC1 → DMA1 Channel 1 | Circular, Half Word |
+| PC7 | GPIO_Output, label `ADC_SYNC` | Very High speed |
+
+Durée de conversion : 2 × (47,5 + 12,5) cycles à 42,5 MHz ≈ 2,8 µs, très inférieure à la période PWM de 50 µs.
+
+> Problème rencontré : l'ADC était d'abord déclenché par `ADC_EXTERNALTRIG_T3_TRGO` (Timer 3, réservé au codeur et jamais démarré). Aucune conversion n'avait lieu. Corrigé en `ADC_EXTERNALTRIG_T1_TRGO`.
+
+**Code (`acquisition/input_analog.c`)**
+```c
+static uint16_t adc_dma_buffer[ADC_NB_CHANNELS];    // rempli par le DMA à chaque déclenchement TIM1
+
+void input_analog_init(void)
+{
+	if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) Error_Handler();
+	if (HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_dma_buffer, ADC_NB_CHANNELS) != HAL_OK) Error_Handler();
+	...
+}
+
+/* Appelée par le DMA quand les 2 conversions sont terminées (1 fois par période PWM) */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef * hadc)
+{
+	if (hadc->Instance != ADC1) return;
+	HAL_GPIO_WritePin(ADC_SYNC_GPIO_Port, ADC_SYNC_Pin, GPIO_PIN_SET);     // impulsion de vérification
+
+	sum_u += adc_dma_buffer[ADC_RANK_I_U];
+	sum_v += adc_dma_buffer[ADC_RANK_I_V];
+	if (++nb_samples >= ADC_NB_SAMPLES)
+	{
+		avg_u_raw = sum_u / ADC_NB_SAMPLES;
+		avg_v_raw = sum_v / ADC_NB_SAMPLES;
+		nb_averages++;
+		sum_u = sum_v = nb_samples = 0;
+	}
+
+	HAL_GPIO_WritePin(ADC_SYNC_GPIO_Port, ADC_SYNC_Pin, GPIO_PIN_RESET);
+}
+```
+Les commandes `current` et `izero` lisent simplement la dernière moyenne : il n'y a plus d'attente de l'ADC.
+
+**Tests avec la chaîne DMA** (après `izero`) :
+
+![Mesure de courant avec DMA](Images/courant_dma.png)
+
+| Test | I_U | I_V | Constat |
+|---|---|---|---|
+| Vitesse nulle (`start`, `izero`) | −20 puis 0 mA | −60 puis 0 mA | zéro correct |
+| α = 68 % (`speed 2900`) | +2080 → +1560 mA | −2040 → −1520 mA | I_V ≈ −I_U, à 40-80 mA près |
+| α = 31 % (`speed 1300`) | −1740 → −1320 mA | +1680 → +1240 mA | les signes s'inversent |
+
+**Comparaison avec le polling :**
+
+| | Polling | TIM1 → ADC → DMA |
+|---|---|---|
+| Écart I_U + I_V (devrait être 0) | 180 à 560 mA | **40 à 80 mA** |
+| Écart entre 2 mesures successives | ± 0,4 A | **≈ 40 mA** (2080 puis 2040 mA) |
+| Occupation du CPU | attente de chaque conversion | aucune (DMA) |
+
+La baisse du courant d'une mesure à l'autre (2080 → 1560 mA) n'est pas du bruit : juste après la rampe, le moteur accélère encore et fournit un couple d'inertie. Le courant diminue jusqu'à la valeur de régime permanent (environ 1,5 A à vide), où il ne compense plus que les frottements.
+
+**Validation à l'oscilloscope** (sonde de courant, voie 2 à 500 mA/div, α ≈ 68 %) :
+
+![Courant moteur à l'oscilloscope](Images/courant_moteur_oscillo.jpeg)
+
+- Le courant **moyen** mesuré par l'oscilloscope vaut **1,76 A**, cohérent avec les 1,56 à 2,08 A donnés par la commande `current`.
+- On voit nettement l'**ondulation de courant** à chaque commutation (environ 0,6 A entre les curseurs a et b). C'est pour cette raison que la mesure doit être synchronisée sur la PWM et moyennée.
+
+**Vérification de la synchronisation** (`speed 2900`) : D0 = **PC7 (ADC_SYNC)**, D1 à D4 = les 4 PWM, voie 1 = tension du hacheur (20 V/div), voie 2 = courant moteur (1 A/div).
+
+![Synchronisation ADC / PWM](Images/synchro_adc_pc7.jpeg)
+
+- L'impulsion de PC7 (D0) apparaît **une fois par période de PWM**, toujours **au même instant** par rapport aux signaux D1 à D4. Les mesures de courant sont donc bien **synchrones avec la PWM**.
+- La mesure tombe loin des fronts de commutation, là où le courant ne présente pas les pics de commutation visibles sur la voie 2.
+- L'ondulation de courant sur une période vaut environ **1,26 A crête à crête** (curseurs a et b, Δt = 58,5 µs). C'est pourquoi on moyenne les mesures sur 64 périodes.
+
+> Remarque : la moyenne affichée par l'oscilloscope sur cette capture (−0,35 A) ne correspond pas au courant mesuré par le STM32 au même point de fonctionnement (environ +1,5 A), ni à la capture précédente (1,76 A). La sonde de courant n'était probablement pas remise à zéro, ou était placée dans l'autre sens. Seules l'ondulation et la position de l'impulsion sont exploitées ici.
+
+---
+
+## 10. 7.3 Mesure de vitesse
+
+### Capteur et broches utilisées
+Le moteur est équipé d'un **codeur incrémental** à sorties différentielles (A, /A, B, /B, Z, /Z). Il est relié au connecteur **DE9 J1301** de la carte du hacheur, puis passe par le récepteur différentiel **MAX3097** (U1301), alimenté en 3,3 V, qui fournit des signaux logiques au STM32 :
+
+| Signal | Broche STM32 | Fonction |
+|---|---|---|
+| ENC_A | **PA6** | TIM3_CH1 |
+| ENC_B | **PA4** | TIM3_CH2 |
+| ENC_Z | PC8 | index (1 impulsion par tour), non utilisé |
+
+> Problème rencontré : sans le câble du codeur branché sur le DE9, le compteur restait à 0 même moteur en marche.
+
+### Fonction de transfert du capteur de vitesse
+**TIM3 en mode Encoder TI1 et TI2** compte les fronts montants et descendants des voies A et B (comptage ×4), et compte ou décompte selon le sens de rotation.
+
+- Nombre de pas par tour : N = 4 × PPR = 4 × 1024 = **4096 pas/tour**.
+- Vitesse calculée toutes les T = 10 ms :
+
+**N (tr/min) = Δcompteur × 60 000 / (4096 × 10)**, soit une résolution de **1,46 tr/min**.
+
+La différence de deux compteurs 16 bits est convertie en `int16_t`, ce qui gère automatiquement le passage 65535 → 0 et le sens de rotation.
+
+**Génératrice tachymétrique** (mesurée à l'oscilloscope en même temps que `rpm`) :
+
+| Commande | Vitesse codeur (`rpm`) | Tension tachymétrique | Rapport |
+|---|---|---|---|
+| `speed 2900` | 1149 tr/min | 11,80 V | 10,3 V / 1000 tr/min |
+| `speed 1300` | −1224 tr/min | −12,25 V | 10,0 V / 1000 tr/min |
+
+La génératrice tachymétrique donne **K_tach ≈ 10 V / 1000 tr/min** dans les deux sens. Cette valeur standard confirme le réglage **PPR = 1024** du codeur.
+
+### Configuration CubeMX
+| Périphérique | Paramètre | Valeur |
+|---|---|---|
+| TIM3 | Combined Channels | Encoder Mode (TI1 and TI2) |
+| TIM3 | Prescaler / Counter Period | 0 / 65535 |
+| TIM3 | Input Filter IC1 / IC2 | 5 (filtrage des parasites) |
+| TIM7 | Prescaler / Counter Period | 169 / 9999, soit 170 MHz / 170 / 10 000 = **100 Hz (10 ms)** |
+| TIM7 | NVIC | TIM7 global interrupt activée |
+
+### Code (`acquisition/input_encoder.c`)
+```c
+#define ENCODER_PPR             1024
+#define ENCODER_COUNTS_PER_REV  (4 * ENCODER_PPR)
+#define SPEED_PERIOD_MS         10
+#define MS_PER_MIN              60000
+
+/* Appelée toutes les SPEED_PERIOD_MS par l'interruption de TIM7 */
+void input_encoder_update(void)
+{
+	uint16_t count = __HAL_TIM_GET_COUNTER(&htim3);
+	int16_t delta = (int16_t)(count - last_count);  // le cast gère le passage 65535 -> 0
+	last_count = count;
+
+	speed_rpm = (int32_t)delta * MS_PER_MIN / (ENCODER_COUNTS_PER_REV * SPEED_PERIOD_MS);
+}
+```
+L'appel se fait dans `HAL_TIM_PeriodElapsedCallback` (`main.c`, zone USER CODE), lorsque `htim->Instance == TIM7`.
+
+### Tests
+
+![Mesure de vitesse au codeur](Images/vitesse_codeur.png)
+
+| Commande | α | Vitesse mesurée |
+|---|---|---|
+| `start` | 50 % | 0 tr/min |
+| `speed 2900` | 68,3 % | **1149 tr/min** (stable à ± 1 tr/min) |
+| `speed 1300` | 30,6 % | **−1224 tr/min** (sens inverse) |
+
+La vitesse est **proportionnelle à la tension moyenne** appliquée au moteur, (2α − 1)·V_bus :
+
+| | 2α − 1 | Vitesse |
+|---|---|---|
+| CCR 2900 | 0,365 | 1149 tr/min |
+| CCR 1300 | 0,388 | 1224 tr/min |
+| **Rapport** | **1,063** | **1,065** |
+
+### Fréquence d'asservissement
+La vitesse est calculée toutes les **10 ms (100 Hz)**, par l'interruption de TIM7. C'est aussi la période retenue pour l'asservissement en vitesse.
+
+Ce choix est un compromis :
+- une période **plus courte** rendrait l'asservissement plus réactif, mais dégraderait la résolution de la mesure. Le nombre de pas comptés pendant la période diminue : 1,46 tr/min par pas à 10 ms, 14,6 tr/min à 1 ms ;
+- une période **plus longue** améliorerait la résolution, mais retarderait la réaction du correcteur.
+
+À 1149 tr/min, le codeur fournit environ 785 pas par période de 10 ms, ce qui donne une mesure précise et stable (± 1 tr/min observé).
