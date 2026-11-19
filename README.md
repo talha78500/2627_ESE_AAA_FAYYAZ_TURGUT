@@ -682,3 +682,17 @@ Ce choix est un compromis :
 - une période **plus longue** améliorerait la résolution, mais retarderait la réaction du correcteur.
 
 À 1149 tr/min, le codeur fournit environ 785 pas par période de 10 ms, ce qui donne une mesure précise et stable (± 1 tr/min observé).
+
+### Constante de temps mécanique
+
+Paramètres de la MCC MP77S (simulation de l'enseignant) : **J = 0,002 kg·m²** et frottement visqueux de **0,0376 N·m à 1000 tr/min**.
+
+**Calcul de f** (frottement ramené en rad/s) :
+
+f = 0,0376 / (1000 × 2π / 60) = 0,0376 / 104,7 ≈ **3,6·10⁻⁴ N·m·s/rad**
+
+**Calcul de τ_m** :
+
+**τ_m = J / f = 0,002 / 3,6·10⁻⁴ ≈ 5,6 s**
+
+La constante de temps mécanique est de l'ordre de plusieurs secondes : la partie mécanique du moteur est **lente**, à cause de l'inertie du rotor et de la charge. À titre de comparaison, la constante de temps électrique vaut τ_e = L / R = 0,5 mH / 0,9 Ω ≈ 0,56 ms : le courant réagit environ 10 000 fois plus vite que la vitesse.
